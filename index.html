@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 & IoT 3D 인터랙티브 가상 실습실</title>
+    
+    <!-- Three.js 3D Graphics Library & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- Tailwind CSS for UI layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;600;700&family=Fira+Code:wght@400;500;600&display=swap');
+
+        body {
+            font-family: 'Pretendard', system-ui, -apple-system, sans-serif;
+            background-color: #0b0f19;
+            color: #f3f4f6;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .code-font {
+            font-family: 'Fira Code', monospace;
+        }
+
+        /* Glassmorphism sidebar and panels */
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-card {
+            background: rgba(31, 41, 55, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 0.75rem;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(75, 85, 99, 0.6);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(107, 114, 128, 0.8);
+        }
+
+        /* Glowing animation effects */
+        .glow-pulse {
+            animation: pulseGlow 2s infinite ease-in-out;
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
+            50% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.8); }
+        }
+
+        /* Custom Range Slider Styling */
+        input[type=range] {
+            accent-color: #3b82f6;
+        }
+
+        .key-active {
+            transform: translateY(2px);
+            background-color: #3b82f6 !important;
+            color: white !important;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen select-none">
+
+    <!-- Navigation Header -->
+    <header class="glass-panel h-14 px-6 flex items-center justify-between z-20 border-b border-gray-800">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold shadow-lg">
+                <i class="fa-solid fa-microchip text-sm"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-sm md:text-base text-gray-100 flex items-center gap-2">
+                    ESP32 3D 인터랙티브 가상 실습실
+                    <span class="text-xs bg-blue-900/60 text-blue-300 border border-blue-700/50 px-2 py-0.5 rounded-full font-normal">고교 2학년 IoT 과정</span>
+                </h1>
+            </div>
+        </div>
+
+        <!-- Mode Selector Tabs -->
+        <div class="flex items-center bg-gray-900/80 p-1 rounded-lg border border-gray-800 text-xs">
+            <button id="tab-display" onclick="switchModule('display')" class="px-3 py-1.5 rounded-md font-medium transition-all text-white bg-blue-600 shadow-sm flex items-center gap-1.5">
+                <i class="fa-solid fa-hashtag text-xs"></i> 7-세그먼트 (TM1650)
+            </button>
+            <button id="tab-buzzer" onclick="switchModule('buzzer')" class="px-3 py-1.5 rounded-md font-medium transition-all text-gray-400 hover:text-white flex items-center gap-1.5">
+                <i class="fa-solid fa-music text-xs"></i> 수동 부저 (멜로디)
+            </button>
+            <button id="tab-combo" onclick="switchModule('combo')" class="px-3 py-1.5 rounded-md font-medium transition-all text-gray-400 hover:text-white flex items-center gap-1.5">
+                <i class="fa-solid fa-robot text-xs"></i> 통합 스마트 IoT
+            </button>
+        </div>
+
+        <div class="flex items-center gap-3 text-xs">
+            <button onclick="resetCamera()" class="px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-md transition border border-gray-700 flex items-center gap-1">
+                <i class="fa-solid fa-video text-xs"></i> 시점 초기화
+            </button>
+            <button onclick="toggleEli5Modal()" class="px-2.5 py-1.5 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-md transition flex items-center gap-1 font-semibold">
+                <i class="fa-solid fa-lightbulb text-yellow-300"></i> ELI5 개념 가이드
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container: 3D Viewport + Control Dashboard -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- Left / Center: 3D Canvas Area -->
+        <div id="canvas-container" class="flex-1 h-full relative cursor-grab active:cursor-grabbing">
+            
+            <!-- Floating Overlay Notice -->
+            <div class="absolute top-4 left-4 z-10 pointer-events-none flex flex-col gap-2">
+                <div class="glass-panel px-3 py-2 rounded-lg flex items-center gap-2 text-xs text-gray-300 border border-gray-700/50">
+                    <i class="fa-solid fa-hand-pointer text-blue-400 animate-bounce"></i>
+                    <span><b>마우스 드래그</b>: 360도 회전 | <b>휠</b>: 확대/축소 | <b>우클릭 드래그</b>: 이동</span>
+                </div>
+                <div id="status-badge" class="glass-panel px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-400 flex items-center gap-2 border border-emerald-500/30">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span id="status-text">ESP32 정상 동작 중 (3D 실시간 동기화)</span>
+                </div>
+            </div>
+
+            <!-- Virtual Sound Wave Visualizer Banner (When Buzzer Plays) -->
+            <div id="sound-wave-box" class="absolute bottom-4 left-4 z-10 glass-panel px-4 py-2.5 rounded-xl hidden flex-col gap-1 border border-indigo-500/30 w-72">
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-indigo-300 font-bold flex items-center gap-1.5">
+                        <i class="fa-solid fa-wave-square text-indigo-400"></i> 부저 주파수 진동
+                    </span>
+                    <span id="sound-freq-text" class="code-font text-blue-400 font-bold">262 Hz (도)</span>
+                </div>
+                <div class="w-full bg-gray-900 h-2 rounded-full overflow-hidden flex items-center px-0.5">
+                    <div id="sound-bar" class="bg-gradient-to-r from-blue-500 to-indigo-400 h-1 rounded-full w-0 transition-all duration-75"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Control Panel & Code Inspector -->
+        <div class="w-96 glass-panel h-full flex flex-col border-l border-gray-800 z-10">
+            
+            <!-- Control Header Tabs -->
+            <div class="flex border-b border-gray-800 text-xs font-semibold">
+                <button id="panel-tab-ctrl" onclick="switchRightPanel('ctrl')" class="flex-1 py-3 text-center border-b-2 border-blue-500 text-blue-400 bg-gray-900/40">
+                    <i class="fa-solid fa-sliders mr-1"></i> 센서/부품 조종
+                </button>
+                <button id="panel-tab-code" onclick="switchRightPanel('code')" class="flex-1 py-3 text-center text-gray-400 border-b-2 border-transparent hover:text-gray-200">
+                    <i class="fa-solid fa-code mr-1"></i> C++ 코드 & 해설
+                </button>
+            </div>
+
+            <!-- Panel Content Area -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
+
+                <!-- PANEL 1: CONTROLS -->
+                <div id="section-controls" class="space-y-4">
+                    
+                    <!-- SECTION 1: TM1650 DISPLAY CONTROLS -->
+                    <div id="ctrl-display-group" class="glass-card p-3.5 space-y-3">
+                        <div class="flex items-center justify-between text-gray-200 font-bold border-b border-gray-700/60 pb-2">
+                            <span class="flex items-center gap-1.5 text-blue-400">
+                                <i class="fa-solid fa-display"></i> TM1650 4자리 세그먼트 제어
+                            </span>
+                            <span class="text-[10px] bg-blue-900/80 text-blue-300 px-1.5 py-0.5 rounded">I2C 통신</span>
+                        </div>
+
+                        <!-- Mode Selector -->
+                        <div>
+                            <label class="text-gray-400 block mb-1">동작 모드 선택</label>
+                            <select id="disp-mode" onchange="updateDisplayMode()" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-gray-200 focus:border-blue-500 outline-none">
+                                <option value="manual">✍️ 수동 숫자 입력 모드</option>
+                                <option value="counter">⏱️ 자동 카운터 모드 (0~9999)</option>
+                                <option value="sensor">🌡️ 가상 온습도 센서 연동</option>
+                            </select>
+                        </div>
+
+                        <!-- Manual Number Input -->
+                        <div id="disp-manual-box" class="space-y-2">
+                            <div class="flex justify-between text-gray-300">
+                                <span>표시할 숫자 (-999 ~ 9999)</span>
+                                <span id="disp-num-val" class="code-font font-bold text-blue-400">9999</span>
+                            </div>
+                            <input type="number" id="disp-num-input" value="9999" min="-999" max="9999" oninput="onNumberInputChange(this.value)" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-white code-font text-center text-sm">
+                            <input type="range" id="disp-num-slider" min="-999" max="9999" value="9999" oninput="onNumberSliderChange(this.value)" class="w-full">
+                        </div>
+
+                        <!-- Virtual Temp Sensor Box -->
+                        <div id="disp-sensor-box" class="space-y-2 hidden">
+                            <div class="flex justify-between text-gray-300">
+                                <span>가상 측정 온도 (°C)</span>
+                                <span id="disp-temp-val" class="code-font font-bold text-emerald-400">25.4 °C</span>
+                            </div>
+                            <input type="range" id="disp-temp-slider" min="-10.0" max="50.0" step="0.1" value="25.4" oninput="onTempSliderChange(this.value)" class="w-full">
+                            <p class="text-[11px] text-gray-400 italic">* 온도가 10을 곱해져 세그먼트 전광판에 표현됩니다 (예: 25.4°C ➔ 0254)</p>
+                        </div>
+
+                        <!-- LED Color & Brightness -->
+                        <div class="grid grid-cols-2 gap-2 pt-1 border-t border-gray-700/50">
+                            <div>
+                                <label class="text-gray-400 block mb-1">불빛 색상</label>
+                                <select id="disp-color" onchange="updateVisuals()" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-1.5 text-gray-200">
+                                    <option value="#ff1e43">🔴 Red (빨강)</option>
+                                    <option value="#10b981">🟢 Green (초록)</option>
+                                    <option value="#3b82f6">🔵 Blue (파랑)</option>
+                                    <option value="#f59e0b">🟡 Yellow (노랑)</option>
+                                    <option value="#ffffff">⚪ White (하양)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-gray-400 block mb-1">밝기 (Brightness)</label>
+                                <input type="range" id="disp-bright" min="0.2" max="1.0" step="0.1" value="0.8" oninput="updateVisuals()" class="w-full mt-2">
+                            </div>
+                        </div>
+
+                        <!-- GPIO Pins Config -->
+                        <div class="pt-2 border-t border-gray-700/50 grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-gray-400 block mb-1">CLK 핀 (클록)</label>
+                                <select id="pin-clk" onchange="onPinChange()" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-1.5 text-blue-300 font-mono">
+                                    <option value="22">GPIO 22</option>
+                                    <option value="18">GPIO 18</option>
+                                    <option value="5">GPIO 5</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-gray-400 block mb-1">DIO 핀 (데이터)</label>
+                                <select id="pin-dio" onchange="onPinChange()" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-1.5 text-blue-300 font-mono">
+                                    <option value="21">GPIO 21</option>
+                                    <option value="19">GPIO 19</option>
+                                    <option value="4">GPIO 4</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 2: PASSIVE BUZZER CONTROLS -->
+                    <div id="ctrl-buzzer-group" class="glass-card p-3.5 space-y-3">
+                        <div class="flex items-center justify-between text-gray-200 font-bold border-b border-gray-700/60 pb-2">
+                            <span class="flex items-center gap-1.5 text-indigo-400">
+                                <i class="fa-solid fa-volume-high"></i> 수동 부저 멜로디 제어
+                            </span>
+                            <span class="text-[10px] bg-indigo-900/80 text-indigo-300 px-1.5 py-0.5 rounded">PWM 진동</span>
+                        </div>
+
+                        <!-- Buzzer Pin -->
+                        <div class="flex items-center justify-between">
+                            <label class="text-gray-400">부저 연결 핀 지정:</label>
+                            <select id="pin-buzzer" onchange="onPinChange()" class="bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-indigo-300 font-mono">
+                                <option value="5">GPIO 5</option>
+                                <option value="17">GPIO 17</option>
+                                <option value="16">GPIO 16</option>
+                            </select>
+                        </div>
+
+                        <!-- Interactive Piano Keyboard Pads -->
+                        <div>
+                            <label class="text-gray-400 block mb-1.5">🎵 가상 피아노 건반 (클릭시 실제 소리 재생)</label>
+                            <div class="grid grid-cols-7 gap-1">
+                                <button onclick="playNote(262, '도 (Do)', 'C4')" class="piano-key bg-gray-800 hover:bg-indigo-600 text-gray-200 p-2 rounded flex flex-col items-center border border-gray-700 transition">
+                                    <span class="font-bold">도</span>
+                                    <span class="text-[9px] text-gray-400">262Hz</span>
+                                </button>
+                                <button onclick="playNote(294, '레 (Re)', 'D4')" class="piano-key bg-gray-800 hover:bg-indigo-600 text-gray-200 p-2 rounded flex flex-col items-center border border-gray-700 transition">
+                                    <span class="font-bold">레</span>
+                                    <span class="text-[9px] text-gray-400">294Hz</span>
+                                </button>
+                                <button onclick="playNote(330, '미 (Mi)', 'E4')" class="piano-key bg-gray-800 hover:bg-indigo-600 text-gray-200 p-2 rounded flex flex-col items-center border border-gray-700 transition">
+                                    <span class="font-bold">미</span>
+                                    <span class="text-[9px] text-gray-400">330Hz</span>
+                                </button>
+                                <button onclick="playNote(349, '파 (Fa)', 'F4')" class="piano-key bg-gray-800 hover:bg-indigo-600 text-gray-200 p-2 rounded flex flex-col items-center border border-gray-700 transition">
+                                    <span class="font-bold">파</span>
+                                    <span class="text-[9px] text-gray-400">349Hz</span>
+                                </button>
+                                <button onclick="playNote(392, '솔 (So)', 'G4')" class="piano-key bg-gray-800 hover:bg-indigo-600 text-gray-200 p-2 rounded flex flex-col items-center border border-gray-700 transition">
+                                    <span class="font-bold">솔</span>
+                                    <span class="text-[9px] text-gray-400">392Hz</span>
+                                </button>
+                                <button onclick="playNote(440, '라 (La)', 'A4')" class="piano-key bg-gray-800 hover:bg-indigo-600 text-gray-200 p-2 rounded flex flex-col items-center border border-gray-700 transition">
+                                    <span class="font-bold">라</span>
+                                    <span class="text-[9px] text-gray-400">440Hz</span>
+                                </button>
+                                <button onclick="playNote(494, '시 (Si)', 'B4')" class="piano-key bg-gray-800 hover:bg-indigo-600 text-gray-200 p-2 rounded flex flex-col items-center border border-gray-700 transition">
+                                    <span class="font-bold">시</span>
+                                    <span class="text-[9px] text-gray-400">494Hz</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Song Player Buttons -->
+                        <div class="space-y-2 pt-1 border-t border-gray-700/50">
+                            <label class="text-gray-400 block">자동 멜로디 연주</label>
+                            <div class="flex gap-2">
+                                <button onclick="playScaleMelody()" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow transition flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-play text-xs"></i> 도레미파솔라시 연주
+                                </button>
+                                <button onclick="stopMelody()" class="px-3 py-2 bg-rose-900/80 hover:bg-rose-800 text-rose-200 font-semibold rounded-lg border border-rose-700/50 transition">
+                                    <i class="fa-solid fa-stop"></i> 정지
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Tempo Control -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-gray-300">
+                                <span>음 지속 시간 (Delay):</span>
+                                <span id="buzzer-delay-val" class="code-font font-bold text-indigo-400">500 ms</span>
+                            </div>
+                            <input type="range" id="buzzer-delay-slider" min="100" max="1000" step="50" value="500" oninput="onBuzzerDelayChange(this.value)" class="w-full">
+                        </div>
+                    </div>
+
+                    <!-- SECTION 3: INTEGRATED SMART IOT SYSTEM -->
+                    <div id="ctrl-combo-group" class="glass-card p-3.5 space-y-3 hidden">
+                        <div class="flex items-center justify-between text-gray-200 font-bold border-b border-gray-700/60 pb-2">
+                            <span class="flex items-center gap-1.5 text-emerald-400">
+                                <i class="fa-solid fa-car"></i> 스마트 주차/거리 감지 시스템
+                            </span>
+                            <span class="text-[10px] bg-emerald-900/80 text-emerald-300 px-1.5 py-0.5 rounded">통합 복합 제어</span>
+                        </div>
+
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-gray-300">
+                                <span>가상 물체/차량과의 거리:</span>
+                                <span id="combo-dist-val" class="code-font font-bold text-emerald-400">15 cm</span>
+                            </div>
+                            <input type="range" id="combo-dist-slider" min="2" max="100" value="15" oninput="onComboDistanceChange(this.value)" class="w-full">
+                        </div>
+
+                        <div class="bg-gray-900/80 p-2.5 rounded-lg border border-gray-800 space-y-1.5 text-[11px]">
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">초음파 센서 상태:</span>
+                                <span id="combo-status-sensor" class="text-blue-400 font-bold">거리 측정이 진행 중</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">전광판(TM1650):</span>
+                                <span id="combo-status-disp" class="text-amber-400 font-bold">" 15" 표출 중</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">경보 부저(Buzzer):</span>
+                                <span id="combo-status-buzzer" class="text-rose-400 font-bold">위험 경고음 (988Hz)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- PANEL 2: CODE GENERATOR & ELI5 EXPLAINER -->
+                <div id="section-code" class="space-y-4 hidden">
+                    
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-gray-200 flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-code text-blue-400"></i> 실시간 아두이노 C++ 소스
+                        </span>
+                        <button onclick="copyGeneratedCode()" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-blue-300 border border-gray-700 rounded text-[11px] transition">
+                            <i class="fa-solid fa-copy"></i> 코드 복사
+                        </button>
+                    </div>
+
+                    <!-- Code Box -->
+                    <div class="relative">
+                        <pre id="cpp-code-block" class="code-font text-[11px] bg-gray-950 p-3 rounded-xl border border-gray-800 text-teal-300 overflow-x-auto leading-relaxed shadow-inner max-h-72"></pre>
+                    </div>
+
+                    <!-- Line-by-Line ELI5 Interactive Explainer -->
+                    <div class="glass-card p-3 space-y-2">
+                        <div class="font-bold text-gray-200 flex items-center justify-between border-b border-gray-700/60 pb-1.5">
+                            <span class="text-yellow-400 flex items-center gap-1">
+                                <i class="fa-solid fa-graduation-cap"></i> 줄별(Line-by-Line) ELI5 해설기
+                            </span>
+                            <span class="text-[10px] text-gray-400">코드를 터치하여 해설 보기</span>
+                        </div>
+                        <div id="eli5-line-comment" class="p-2.5 bg-gray-900/90 rounded-lg border border-gray-800 text-gray-300 leading-normal text-[11.5px] min-h-[70px] flex items-center">
+                            💡 위 C++ 소스 코드에서 알고 싶은 줄을 클릭하면 고등학생 맞춤형 쉬운 설명(ELI5)이 여기에 나타납니다!
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ELI5 Modal Tutorial Dialog -->
+    <div id="eli5-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-2xl rounded-2xl border border-gray-700 p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <h3 class="text-lg font-bold text-gray-100 flex items-center gap-2">
+                    <i class="fa-solid fa-lightbulb text-yellow-400"></i> ESP32 IoT 핵심 개념 ELI5 가이드
+                </h3>
+                <button onclick="toggleEli5Modal()" class="text-gray-400 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-xs leading-relaxed text-gray-300">
+                <!-- Concept 1 -->
+                <div class="bg-gray-900/80 p-3.5 rounded-xl border border-gray-800 space-y-1">
+                    <h4 class="font-bold text-blue-400 text-sm">1. TM1650 7-세그먼트 전광판 원리</h4>
+                    <p><b>비유:</b> 8개의 꼬마전구가 모여 만든 숫자 판!</p>
+                    <p>숫자 하나를 표현하기 위해 'a, b, c, d, e, f, g'라는 7개의 긴 전구와 1개의 소수점 전구가 모여 있습니다. 컴퓨터가 "9번 모양으로 불 켜라!" 하고 신호를 보낼 전선이 <b>DIO(데이터)</b>와 <b>CLK(시계 박자)</b>입니다.</p>
+                </div>
+
+                <!-- Concept 2 -->
+                <div class="bg-gray-900/80 p-3.5 rounded-xl border border-gray-800 space-y-1">
+                    <h4 class="font-bold text-indigo-400 text-sm">2. 수동 부저 (Passive Buzzer) 계이름 원리</h4>
+                    <p><b>비유:</b> 1초에 얇은 막이 몇 번 떨어느냐에 따라 음이 달라집니다!</p>
+                    <p>1초에 262번 '두두두두' 떨면 낮고 아름다운 <b>'도(DO)'</b> 소리가 나고, 1초에 440번 빠르게 떨면 높고 청아한 <b>'라(LA)'</b> 소리가 납니다. `tone(핀, 주파수)` 코드가 이 떨림 속도를 지시합니다.</p>
+                </div>
+
+                <!-- Concept 3 -->
+                <div class="bg-gray-900/80 p-3.5 rounded-xl border border-gray-800 space-y-1">
+                    <h4 class="font-bold text-emerald-400 text-sm">3. ESP32 핀(GPIO)이란?</h4>
+                    <p><b>비유:</b> 로봇 뇌(ESP32)에서 손발(센서/모듈)로 연결되는 신경 전선 구멍입니다.</p>
+                    <p>우리가 소스 코드에서 `CLK 22`, `DIO 21`, `beeppin 5`라고 정해주는 순간, 3D 화면 속 알록달록한 전선들이 지정된 신경 구멍으로 착 꽂히게 됩니다!</p>
+                </div>
+            </div>
+
+            <div class="pt-2 text-right">
+                <button onclick="toggleEli5Modal()" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold text-xs shadow transition">
+                    확인하고 실습 시작하기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 glass-panel px-4 py-2.5 rounded-xl border border-blue-500/50 text-blue-200 text-xs shadow-xl hidden flex items-center gap-2">
+        <i class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toast-msg">메시지</span>
+    </div>
+
+    <script>
+        // =========================================================================
+        // GLOBAL STATE & SYSTEM VARIABLES
+        // =========================================================================
+        let currentModule = 'display'; // 'display', 'buzzer', 'combo'
+        let currentNumVal = 9999;
+        let currentTempVal = 25.4;
+        let currentDistVal = 15;
+        let buzzerDelay = 500;
+        let isMelodyPlaying = false;
+        let melodyTimer = null;
+
+        // Pins State
+        let pinClkVal = 22;
+        let pinDioVal = 21;
+        let pinBuzzerVal = 5;
+
+        // Three.js Core Objects
+        let scene, camera, renderer, controls;
+        let esp32BoardGroup, tm1650ModuleGroup, buzzerModuleGroup, ultrasonicGroup;
+        let digitMeshes = [];
+        let wiresGroup;
+        let buzzerDiaphragmMesh;
+
+        // Web Audio API Synthesizer
+        let audioCtx = null;
+        let currentOscillator = null;
+
+        // =========================================================================
+        // 1. THREE.JS 3D SCENE INITIALIZATION
+        // =========================================================================
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b0f19);
+            scene.fog = new THREE.FogExp2(0x0b0f19, 0.02);
+
+            // Camera Setup
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 14, 22);
+
+            // Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Orbit Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.02; // Prevents camera from going under floor
+            controls.target.set(0, 0, 0);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(12, 24, 15);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            const bluePointLight = new THREE.PointLight(0x3b82f6, 1.2, 30);
+            bluePointLight.position.set(-6, 5, 0);
+            scene.add(bluePointLight);
+
+            // Floor Grid Helper
+            const gridHelper = new THREE.GridHelper(40, 40, 0x3b82f6, 0x1f293d);
+            gridHelper.position.y = -0.05;
+            scene.add(gridHelper);
+
+            // Group for Dynamic Wires
+            wiresGroup = new THREE.Group();
+            scene.add(wiresGroup);
+
+            // Build 3D Models
+            create3DESP32();
+            create3DTM1650Display();
+            create3DPassiveBuzzer();
+            create3DUltrasonicSensor();
+
+            // Initial Wire Draw & Module Visibility
+            updateModuleVisibility();
+            redrawWires();
+
+            // Handle Resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Start Render Loop
+            animate();
+        }
+
+        // =========================================================================
+        // 2. 3D PROCEDURAL MESH CREATION (ESP32, TM1650, BUZZER)
+        // =========================================================================
+
+        // [ESP32 Microcontroller Board Mesh]
+        function create3DESP32() {
+            esp32BoardGroup = new THREE.Group();
+
+            // PCB Board Base (Green/Dark PCB)
+            const pcbGeo = new THREE.BoxGeometry(4.2, 0.2, 7.2);
+            const pcbMat = new THREE.MeshStandardMaterial({ color: 0x0f4c25, roughness: 0.3 });
+            const pcb = new THREE.Mesh(pcbGeo, pcbMat);
+            pcb.castShadow = true;
+            esp32BoardGroup.add(pcb);
+
+            // ESP-WROOM-32 Main Metal Shield Chip
+            const chipGeo = new THREE.BoxGeometry(2.2, 0.25, 2.6);
+            const chipMat = new THREE.MeshStandardMaterial({ color: 0xc0c0c0, metalness: 0.9, roughness: 0.2 });
+            const chip = new THREE.Mesh(chipGeo, chipMat);
+            chip.position.set(0, 0.2, -0.6);
+            esp32BoardGroup.add(chip);
+
+            // USB Port
+            const usbGeo = new THREE.BoxGeometry(1.2, 0.4, 1.4);
+            const usbMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.8 });
+            const usb = new THREE.Mesh(usbGeo, usbMat);
+            usb.position.set(0, 0.25, 3.2);
+            esp32BoardGroup.add(usb);
+
+            // GPIO Header Pin Blocks (Left & Right)
+            const headerGeo = new THREE.BoxGeometry(0.3, 0.5, 6.2);
+            const headerMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+            
+            const leftHeader = new THREE.Mesh(headerGeo, headerMat);
+            leftHeader.position.set(-1.8, 0.3, 0);
+            esp32BoardGroup.add(leftHeader);
+
+            const rightHeader = new THREE.Mesh(headerGeo, headerMat);
+            rightHeader.position.set(1.8, 0.3, 0);
+            esp32BoardGroup.add(rightHeader);
+
+            esp32BoardGroup.position.set(-6, 0.1, 0);
+            scene.add(esp32BoardGroup);
+        }
+
+        // [TM1650 4-Digit 7-Segment Display Module]
+        function create3DTM1650Display() {
+            tm1650ModuleGroup = new THREE.Group();
+
+            // PCB Base
+            const boardGeo = new THREE.BoxGeometry(7.5, 0.2, 3.8);
+            const boardMat = new THREE.MeshStandardMaterial({ color: 0x1c1d24, roughness: 0.5 });
+            const board = new THREE.Mesh(boardGeo, boardMat);
+            board.castShadow = true;
+            tm1650ModuleGroup.add(board);
+
+            // 4-Digit Red Filter Glass Faceplate
+            const glassGeo = new THREE.BoxGeometry(6.6, 0.6, 2.6);
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x110204, roughness: 0.1, metalness: 0.1 });
+            const glass = new THREE.Mesh(glassGeo, glassMat);
+            glass.position.set(0, 0.35, 0);
+            tm1650ModuleGroup.add(glass);
+
+            // Create 4 7-Segment Digit Groups inside
+            digitMeshes = [];
+            for (let i = 0; i < 4; i++) {
+                const digit = createSingleDigit3DMesh();
+                digit.group.position.set(-2.25 + i * 1.5, 0.68, 0);
+                tm1650ModuleGroup.add(digit.group);
+                digitMeshes.push(digit);
+            }
+
+            tm1650ModuleGroup.position.set(4, 0.1, -2);
+            scene.add(tm1650ModuleGroup);
+        }
+
+        // Creates 3D bars representing 'a','b','c','d','e','f','g'
+        function createSingleDigit3DMesh() {
+            const group = new THREE.Group();
+            const segments = {};
+
+            const horizGeo = new THREE.BoxGeometry(0.65, 0.06, 0.1);
+            const vertGeo = new THREE.BoxGeometry(0.1, 0.65, 0.06);
+
+            const segLayout = {
+                a: { geo: horizGeo, pos: [0, 0, -0.6] },
+                b: { geo: vertGeo,  pos: [0.3, 0, -0.3] },
+                c: { geo: vertGeo,  pos: [0.3, 0, 0.3] },
+                d: { geo: horizGeo, pos: [0, 0, 0.6] },
+                e: { geo: vertGeo,  pos: [-0.3, 0, 0.3] },
+                f: { geo: vertGeo,  pos: [-0.3, 0, -0.3] },
+                g: { geo: horizGeo, pos: [0, 0, 0] }
+            };
+
+            const defaultMat = new THREE.MeshStandardMaterial({
+                color: 0x220508,
+                emissive: 0x000000,
+                roughness: 0.5
+            });
+
+            for (let key in segLayout) {
+                const mesh = new THREE.Mesh(segLayout[key].geo, defaultMat.clone());
+                mesh.position.set(...segLayout[key].pos);
+                group.add(mesh);
+                segments[key] = mesh;
+            }
+
+            return { group, segments };
+        }
+
+        // [Passive Buzzer 3D Mesh]
+        function create3DPassiveBuzzer() {
+            buzzerModuleGroup = new THREE.Group();
+
+            // Module PCB Base
+            const boardGeo = new THREE.BoxGeometry(3.2, 0.2, 3.2);
+            const boardMat = new THREE.MeshStandardMaterial({ color: 0x0f2042 });
+            const board = new THREE.Mesh(boardGeo, boardMat);
+            buzzerModuleGroup.add(board);
+
+            // Cylindrical Buzzer Body
+            const cylGeo = new THREE.CylinderGeometry(1.1, 1.1, 1.2, 32);
+            const cylMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3 });
+            const cyl = new THREE.Mesh(cylGeo, cylMat);
+            cyl.position.set(0, 0.7, 0);
+            buzzerModuleGroup.add(cyl);
+
+            // Center Hole & Vibrating Diaphragm
+            const holeGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.1, 16);
+            const holeMat = new THREE.MeshStandardMaterial({ color: 0xddbb33, metalness: 0.9, roughness: 0.2 });
+            buzzerDiaphragmMesh = new THREE.Mesh(holeGeo, holeMat);
+            buzzerDiaphragmMesh.position.set(0, 1.3, 0);
+            buzzerModuleGroup.add(buzzerDiaphragmMesh);
+
+            buzzerModuleGroup.position.set(4, 0.1, 3.5);
+            scene.add(buzzerModuleGroup);
+        }
+
+        // [Ultrasonic Sensor 3D Mesh for Combo Mode]
+        function create3DUltrasonicSensor() {
+            ultrasonicGroup = new THREE.Group();
+
+            // PCB
+            const pcbGeo = new THREE.BoxGeometry(4.5, 0.2, 2.2);
+            const pcbMat = new THREE.MeshStandardMaterial({ color: 0x0044aa });
+            const pcb = new THREE.Mesh(pcbGeo, pcbMat);
+            ultrasonicGroup.add(pcb);
+
+            // Two Metal Transducer Cylinders (Emitters/Receivers)
+            const cylGeo = new THREE.CylinderGeometry(0.7, 0.7, 1.2, 32);
+            const cylMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8 });
+
+            const leftCyl = new THREE.Mesh(cylGeo, cylMat);
+            leftCyl.rotation.x = Math.PI / 2;
+            leftCyl.position.set(-1.2, 0.7, 0);
+            ultrasonicGroup.add(leftCyl);
+
+            const rightCyl = new THREE.Mesh(cylGeo, cylMat);
+            rightCyl.rotation.x = Math.PI / 2;
+            rightCyl.position.set(1.2, 0.7, 0);
+            ultrasonicGroup.add(rightCyl);
+
+            ultrasonicGroup.position.set(0, 0.1, -6);
+            scene.add(ultrasonicGroup);
+        }
+
+        // =========================================================================
+        // 3. DYNAMIC 3D WIRE DRAWING SYSTEM
+        // =========================================================================
+        function redrawWires() {
+            // Clear existing wires
+            while (wiresGroup.children.length > 0) {
+                wiresGroup.remove(wiresGroup.children[0]);
+            }
+
+            const espPos = esp32BoardGroup.position;
+
+            // Draw TM1650 Wires if Display / Combo active
+            if (currentModule === 'display' || currentModule === 'combo') {
+                const dispPos = tm1650ModuleGroup.position;
+                createWireCurve(
+                    new THREE.Vector3(espPos.x + 1.8, espPos.y + 0.3, -1.0),
+                    new THREE.Vector3(dispPos.x - 3.0, dispPos.y + 0.2, -0.5),
+                    0x3b82f6 // CLK Wire Blue
+                );
+                createWireCurve(
+                    new THREE.Vector3(espPos.x + 1.8, espPos.y + 0.3, -0.5),
+                    new THREE.Vector3(dispPos.x - 3.0, dispPos.y + 0.2, 0.5),
+                    0x10b981 // DIO Wire Green
+                );
+            }
+
+            // Draw Buzzer Wire if Buzzer / Combo active
+            if (currentModule === 'buzzer' || currentModule === 'combo') {
+                const buzPos = buzzerModuleGroup.position;
+                createWireCurve(
+                    new THREE.Vector3(espPos.x + 1.8, espPos.y + 0.3, 1.5),
+                    new THREE.Vector3(buzPos.x - 1.2, buzPos.y + 0.2, 0),
+                    0x6366f1 // Buzzer Wire Purple
+                );
+            }
+        }
+
+        // Curved wire generator using CatmullRomCurve3
+        function createWireCurve(p1, p2, colorHex) {
+            const midP = new THREE.Vector3(
+                (p1.x + p2.x) / 2,
+                Math.max(p1.y, p2.y) + 2.5,
+                (p1.z + p2.z) / 2
+            );
+            const curve = new THREE.CatmullRomCurve3([p1, midP, p2]);
+            const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.08, 8, false);
+            const tubeMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.3 });
+            const wireMesh = new THREE.Mesh(tubeGeo, tubeMat);
+            wiresGroup.add(wireMesh);
+        }
+
+        // Module Visibility Toggle based on tab
+        function updateModuleVisibility() {
+            tm1650ModuleGroup.visible = (currentModule === 'display' || currentModule === 'combo');
+            buzzerModuleGroup.visible = (currentModule === 'buzzer' || currentModule === 'combo');
+            ultrasonicGroup.visible = (currentModule === 'combo');
+        }
+
+        // =========================================================================
+        // 4. WEB AUDIO API SYNTHESIZER FOR PASSIVE BUZZER
+        // =========================================================================
+        function initAudioContext() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playToneSound(freq, durationMs = 400) {
+            initAudioContext();
+
+            // Stop previous oscillator if playing
+            if (currentOscillator) {
+                try { currentOscillator.stop(); } catch(e){}
+            }
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            // Square wave creates realistic piezo buzzer chime sound
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+            // Sound envelope (smooth start & fade out)
+            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + durationMs / 1000);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + durationMs / 1000);
+            currentOscillator = osc;
+
+            // Trigger UI Soundwave Visualizer & 3D Vibration Animation
+            triggerSoundVisualizer(freq, durationMs);
+        }
+
+        function triggerSoundVisualizer(freq, durationMs) {
+            const waveBox = document.getElementById('sound-wave-box');
+            const freqText = document.getElementById('sound-freq-text');
+            const soundBar = document.getElementById('sound-bar');
+
+            waveBox.classList.remove('hidden');
+            waveBox.classList.add('flex');
+            freqText.innerText = `${freq} Hz`;
+
+            // Animate sound progress bar
+            soundBar.style.width = '100%';
+            setTimeout(() => {
+                soundBar.style.width = '0%';
+                waveBox.classList.add('hidden');
+            }, durationMs);
+
+            // 3D Diaphragm Pulse Effect
+            if (buzzerDiaphragmMesh) {
+                buzzerDiaphragmMesh.position.y = 1.45;
+                setTimeout(() => { buzzerDiaphragmMesh.position.y = 1.3; }, durationMs);
+            }
+        }
+
+        // =========================================================================
+        // 5. 7-SEGMENT DISPLAY RENDERING LOGIC
+        // =========================================================================
+        const segmentBitMap = {
+            '0': ['a','b','c','d','e','f'],
+            '1': ['b','c'],
+            '2': ['a','b','d','e','g'],
+            '3': ['a','b','c','d','g'],
+            '4': ['b','c','f','g'],
+            '5': ['a','c','d','f','g'],
+            '6': ['a','c','d','e','f','g'],
+            '7': ['a','b','c'],
+            '8': ['a','b','c','d','e','f','g'],
+            '9': ['a','b','c','d','f','g'],
+            '-': ['g'],
+            ' ': []
+        };
+
+        function update3DDisplayVisuals(valString) {
+            let str = String(valString).padStart(4, ' ');
+            if (str.length > 4) str = str.slice(-4);
+
+            const chosenColor = document.getElementById('disp-color').value;
+            const brightVal = parseFloat(document.getElementById('disp-bright').value);
+            const activeThreeColor = new THREE.Color(chosenColor);
+
+            for (let i = 0; i < 4; i++) {
+                const char = str[i] || ' ';
+                const activeSegKeys = segmentBitMap[char] || [];
+                const digitSegs = digitMeshes[i].segments;
+
+                for (let segKey in digitSegs) {
+                    const mesh = digitSegs[segKey];
+                    if (activeSegKeys.includes(segKey)) {
+                        mesh.material.color.copy(activeThreeColor);
+                        mesh.material.emissive.copy(activeThreeColor);
+                        mesh.material.emissiveIntensity = brightVal;
+                    } else {
+                        mesh.material.color.setHex(0x1a0508);
+                        mesh.material.emissive.setHex(0x000000);
+                        mesh.material.emissiveIntensity = 0;
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // 6. C++ CODE GENERATION & LINE-BY-LINE ELI5 EXPLAINER
+        // =========================================================================
+        function updateGeneratedCppCode() {
+            const codeBlock = document.getElementById('cpp-code-block');
+            let code = '';
+
+            if (currentModule === 'display') {
+                const mode = document.getElementById('disp-mode').value;
+                let valToDisplay = currentNumVal;
+                if (mode === 'sensor') valToDisplay = Math.round(currentTempVal * 10);
+
+                code = 
+`// 1 : #include <TM1650.h>
+// 2 : 
+// 3 : #define CLK ${pinClkVal}
+// 4 : #define DIO ${pinDioVal}
+// 5 : 
+// 6 : TM1650 DigitalTube(CLK, DIO);
+// 7 : 
+// 8 : void setup() {
+// 9 :   Wire.begin(DIO, CLK);
+// 10:   DigitalTube.init();
+// 11: }
+// 12: 
+// 13: void loop() {
+// 14:   DigitalTube.displayFloatNum(${valToDisplay});
+// 15:   delay(500);
+// 16: }`;
+
+            } else if (currentModule === 'buzzer') {
+                code = 
+`// 1 : int beeppin = ${pinBuzzerVal}; // 수동 부저 핀
+// 2 : 
+// 3 : void setup() {
+// 4 :   pinMode(beeppin, OUTPUT);
+// 5 : }
+// 6 : 
+// 7 : void loop() {
+// 8 :   tone(beeppin, 262); // 도 (262Hz)
+// 9 :   delay(${buzzerDelay});
+// 10:   tone(beeppin, 330); // 미 (330Hz)
+// 11:   delay(${buzzerDelay});
+// 12:   tone(beeppin, 392); // 솔 (392Hz)
+// 13:   delay(${buzzerDelay});
+// 14:   noTone(beeppin);   // 소리 멈춤
+// 15:   delay(1000);
+// 16: }`;
+
+            } else if (currentModule === 'combo') {
+                code = 
+`// 1 : #include <TM1650.h>
+// 2 : #define CLK ${pinClkVal}
+// 3 : #define DIO ${pinDioVal}
+// 4 : int beeppin = ${pinBuzzerVal};
+// 5 : int dist = ${currentDistVal}; // 측정 거리(cm)
+// 6 : 
+// 7 : TM1650 DigitalTube(CLK, DIO);
+// 8 : 
+// 9 : void setup() {
+// 10:   Wire.begin(DIO, CLK);
+// 11:   DigitalTube.init();
+// 12:   pinMode(beeppin, OUTPUT);
+// 13: }
+// 14: 
+// 15: void loop() {
+// 16:   DigitalTube.displayFloatNum(dist);
+// 17:   if (dist < 20) {
+// 18:     tone(beeppin, 988); // 위험 경고음
+// 19:   } else {
+// 20:     noTone(beeppin);
+// 21:   }
+// 22:   delay(200);
+// 23: }`;
+            }
+
+            codeBlock.innerText = code;
+            attachCodeLineClickEvents();
+        }
+
+        // Line Click Explainer Registry
+        function attachCodeLineClickEvents() {
+            const lines = document.getElementById('cpp-code-block').innerText.split('\n');
+            const commentBox = document.getElementById('eli5-line-comment');
+
+            // Wrap lines in clickable spans
+            let html = '';
+            lines.forEach((line, idx) => {
+                html += `<div onclick="explainCodeLine(${idx + 1}, '${escapeHtml(line)}')" class="hover:bg-blue-900/40 p-0.5 rounded cursor-pointer transition">${line}</div>`;
+            });
+            document.getElementById('cpp-code-block').innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        }
+
+        function explainCodeLine(lineNum, lineText) {
+            const commentBox = document.getElementById('eli5-line-comment');
+            let explanation = "💡 이 줄은 아두이노 기본 명령 줄입니다.";
+
+            if (lineText.includes('#include')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>#include</code>는 전광판을 쉽게 다루기 위한 <b>'전용 리모컨 설명서(라이브러리)'</b>를 외부에서 가져오는 명령입니다.`;
+            } else if (lineText.includes('#define CLK')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>#define CLK</code>: 박자(시계) 신호를 보낼 ESP32의 <b>GPIO ${pinClkVal}번 구멍</b>에 'CLK'라는 별명을 붙여줍니다.`;
+            } else if (lineText.includes('#define DIO')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>#define DIO</code>: 진짜 숫자 데이터 신호를 쏠 <b>GPIO ${pinDioVal}번 구멍</b>에 'DIO'라는 별명을 만듭니다.`;
+            } else if (lineText.includes('TM1650 DigitalTube')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>TM1650 DigitalTube(...)</code>: 설명서를 바탕으로 책상 위에 <b>'DigitalTube'라는 이름의 진짜 전광판 리모컨 객체</b>를 생성합니다.`;
+            } else if (lineText.includes('Wire.begin')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>Wire.begin(...)</code>: DIO 핀과 CLK 핀을 사용해 I2C 통신의 <b>'신호 데이터 도로'</b>를 엽니다.`;
+            } else if (lineText.includes('DigitalTube.init')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>DigitalTube.init()</code>: 전광판 리모컨의 <b>'전원 ON' 버튼</b>을 누르는 준비 단계입니다.`;
+            } else if (lineText.includes('displayFloatNum')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>displayFloatNum(...)</code>: 7세그먼트 전광판 화면에 지정한 수치를 짠! 하고 출력해 줍니다.`;
+            } else if (lineText.includes('tone(')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>tone(핀, 주파수)</code>: 지정한 핀에 연결된 부저를 초당 진동수(Hz)만큼 파르르 떨게 하여 <b>계이름 소리</b>를 냅니다.`;
+            } else if (lineText.includes('noTone')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>noTone(...)</code>: 부저의 진동을 딱 멈춰서 소리를 끕니다.`;
+            } else if (lineText.includes('delay')) {
+                explanation = `<b>[${lineNum}번 줄 ELI5]</b> <code>delay(...)</code>: 밀리초(ms) 단위 동안 잠깐 숨을 고르며 기다립니다. (1000ms = 1초)`;
+            }
+
+            commentBox.innerHTML = explanation;
+        }
+
+        // =========================================================================
+        // 7. EVENT HANDLERS & INTERACTION CONTROLS
+        // =========================================================================
+
+        function switchModule(moduleName) {
+            currentModule = moduleName;
+
+            // Highlight Tab Buttons
+            ['display', 'buzzer', 'combo'].forEach(mod => {
+                const btn = document.getElementById(`tab-${mod}`);
+                if (mod === moduleName) {
+                    btn.className = "px-3 py-1.5 rounded-md font-medium transition-all text-white bg-blue-600 shadow-sm flex items-center gap-1.5";
+                } else {
+                    btn.className = "px-3 py-1.5 rounded-md font-medium transition-all text-gray-400 hover:text-white flex items-center gap-1.5";
+                }
+            });
+
+            // Toggle Control Groups
+            document.getElementById('ctrl-display-group').style.display = (moduleName === 'display') ? 'block' : 'none';
+            document.getElementById('ctrl-buzzer-group').style.display = (moduleName === 'buzzer') ? 'block' : 'none';
+            document.getElementById('ctrl-combo-group').style.display = (moduleName === 'combo') ? 'block' : 'none';
+
+            // Status Badge Text Update
+            const statusText = document.getElementById('status-text');
+            if (moduleName === 'display') statusText.innerText = "TM1650 7-세그먼트 시뮬레이션 모드";
+            if (moduleName === 'buzzer') statusText.innerText = "수동 부저 멜로디 음향 모드";
+            if (moduleName === 'combo') statusText.innerText = "통합 스마트 주차 거리 센서 모드";
+
+            updateModuleVisibility();
+            redrawWires();
+            updateGeneratedCppCode();
+        }
+
+        function switchRightPanel(tab) {
+            const ctrlSec = document.getElementById('section-controls');
+            const codeSec = document.getElementById('section-code');
+            const ctrlBtn = document.getElementById('panel-tab-ctrl');
+            const codeBtn = document.getElementById('panel-tab-code');
+
+            if (tab === 'ctrl') {
+                ctrlSec.classList.remove('hidden');
+                codeSec.classList.add('hidden');
+                ctrlBtn.className = "flex-1 py-3 text-center border-b-2 border-blue-500 text-blue-400 bg-gray-900/40";
+                codeBtn.className = "flex-1 py-3 text-center text-gray-400 border-b-2 border-transparent hover:text-gray-200";
+            } else {
+                ctrlSec.classList.add('hidden');
+                codeSec.classList.remove('hidden');
+                codeBtn.className = "flex-1 py-3 text-center border-b-2 border-blue-500 text-blue-400 bg-gray-900/40";
+                ctrlBtn.className = "flex-1 py-3 text-center text-gray-400 border-b-2 border-transparent hover:text-gray-200";
+            }
+        }
+
+        function onNumberInputChange(val) {
+            currentNumVal = parseInt(val) || 0;
+            document.getElementById('disp-num-slider').value = currentNumVal;
+            document.getElementById('disp-num-val').innerText = currentNumVal;
+            updateVisuals();
+        }
+
+        function onNumberSliderChange(val) {
+            currentNumVal = parseInt(val) || 0;
+            document.getElementById('disp-num-input').value = currentNumVal;
+            document.getElementById('disp-num-val').innerText = currentNumVal;
+            updateVisuals();
+        }
+
+        function onTempSliderChange(val) {
+            currentTempVal = parseFloat(val);
+            document.getElementById('disp-temp-val').innerText = currentTempVal.toFixed(1) + " °C";
+            updateVisuals();
+        }
+
+        function updateDisplayMode() {
+            const mode = document.getElementById('disp-mode').value;
+            document.getElementById('disp-manual-box').style.display = (mode === 'manual') ? 'space-y-2' : 'none';
+            document.getElementById('disp-sensor-box').style.display = (mode === 'sensor') ? 'block' : 'none';
+            updateVisuals();
+        }
+
+        function onPinChange() {
+            pinClkVal = document.getElementById('pin-clk').value;
+            pinDioVal = document.getElementById('pin-dio').value;
+            pinBuzzerVal = document.getElementById('pin-buzzer').value;
+
+            redrawWires();
+            updateGeneratedCppCode();
+            showToast(`핀 변경됨: CLK(GPIO ${pinClkVal}), DIO(GPIO ${pinDioVal}), Buzzer(GPIO ${pinBuzzerVal})`);
+        }
+
+        function updateVisuals() {
+            let valToDisplay = currentNumVal;
+            const mode = document.getElementById('disp-mode').value;
+
+            if (mode === 'sensor') {
+                valToDisplay = Math.round(currentTempVal * 10);
+            }
+
+            update3DDisplayVisuals(valToDisplay);
+            updateGeneratedCppCode();
+        }
+
+        // Piano Key Note Trigger
+        function playNote(freq, noteName, codeName) {
+            playToneSound(freq, buzzerDelay);
+            showToast(`🎹 ${noteName} (${freq}Hz) 음 연주!`);
+        }
+
+        // Automatic Scale Melody Player
+        function playScaleMelody() {
+            if (isMelodyPlaying) return;
+            isMelodyPlaying = true;
+
+            const notes = [
+                { freq: 262, name: '도' },
+                { freq: 294, name: '레' },
+                { freq: 330, name: '미' },
+                { freq: 349, name: '파' },
+                { freq: 392, name: '솔' },
+                { freq: 440, name: '라' },
+                { freq: 494, name: '시' }
+            ];
+
+            let idx = 0;
+            function step() {
+                if (!isMelodyPlaying || idx >= notes.length) {
+                    isMelodyPlaying = false;
+                    return;
+                }
+                playToneSound(notes[idx].freq, buzzerDelay - 50);
+                idx++;
+                melodyTimer = setTimeout(step, buzzerDelay);
+            }
+            step();
+        }
+
+        function stopMelody() {
+            isMelodyPlaying = false;
+            if (melodyTimer) clearTimeout(melodyTimer);
+            if (currentOscillator) {
+                try { currentOscillator.stop(); } catch(e){}
+            }
+            showToast("멜로디 연주 정지됨");
+        }
+
+        function onBuzzerDelayChange(val) {
+            buzzerDelay = parseInt(val);
+            document.getElementById('buzzer-delay-val').innerText = `${buzzerDelay} ms`;
+            updateGeneratedCppCode();
+        }
+
+        function onComboDistanceChange(val) {
+            currentDistVal = parseInt(val);
+            document.getElementById('combo-dist-val').innerText = `${currentDistVal} cm`;
+            
+            // Update Combo Status
+            document.getElementById('combo-status-disp').innerText = `"${String(currentDistVal).padStart(3, ' ')}" 표출`;
+
+            if (currentDistVal < 20) {
+                document.getElementById('combo-status-buzzer').innerText = "⚠️ 위험 경고음 (988Hz) 연주 중!";
+                playToneSound(988, 300);
+            } else {
+                document.getElementById('combo-status-buzzer').innerText = "정상 (소리 꺼짐)";
+            }
+
+            update3DDisplayVisuals(currentDistVal);
+            updateGeneratedCppCode();
+        }
+
+        function resetCamera() {
+            camera.position.set(0, 14, 22);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+
+        function toggleEli5Modal() {
+            const modal = document.getElementById('eli5-modal');
+            modal.classList.toggle('hidden');
+        }
+
+        function copyGeneratedCode() {
+            const codeText = document.getElementById('cpp-code-block').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeText;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+            showToast("C++ 소스 코드가 클립보드에 복사되었습니다!");
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = msg;
+            toast.classList.remove('hidden');
+            setTimeout(() => { toast.classList.add('hidden'); }, 3000);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // =========================================================================
+        // 8. MAIN ANIMATION LOOP
+        // =========================================================================
+        let autoCounter = 0;
+        let lastCounterTime = 0;
+
+        function animate(time) {
+            requestAnimationFrame(animate);
+
+            // Orbit controls update
+            controls.update();
+
+            // Auto Counter Mode handling
+            if (currentModule === 'display') {
+                const mode = document.getElementById('disp-mode').value;
+                if (mode === 'counter') {
+                    if (time - lastCounterTime > 150) {
+                        autoCounter = (autoCounter + 1) % 10000;
+                        update3DDisplayVisuals(autoCounter);
+                        lastCounterTime = time;
+                    }
+                }
+            }
+
+            // Subtle floating mesh animation for 3D realism
+            if (tm1650ModuleGroup) {
+                tm1650ModuleGroup.position.y = 0.1 + Math.sin(time * 0.002) * 0.05;
+            }
+            if (buzzerModuleGroup) {
+                buzzerModuleGroup.position.y = 0.1 + Math.cos(time * 0.002) * 0.05;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Window Load Event Entry Point
+        window.onload = function() {
+            init3D();
+            updateVisuals();
+            updateGeneratedCppCode();
+        };
+    </script>
+</body>
+</html>
